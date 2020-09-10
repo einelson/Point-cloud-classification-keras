@@ -42,26 +42,30 @@ data=data.drop(['r', 'g', 'b', 'class'], axis=1)
 # the last column is the y value
 data_targets=new_df
 data_targets = data_targets.drop(['x', 'y', 'z', 'r', 'g', 'b'], axis=1)
+# print(new_df['class'].unique())
 
 # split the data
 from sklearn.model_selection import train_test_split
 xTrain, xTest, yTrain, yTest = train_test_split(data, data_targets, test_size = 0.1)
 
-# print(xTrain.shape)
+print(xTrain.shape)
 
 '''
 Define the model
 '''
-import tensorflow as tf
+# import tensorflow as tf
 import keras
-from tensorflow.keras import layers
-from tensorflow.keras.layers import Conv2D, InputLayer, UpSampling2D, MaxPooling2D, Dense, Flatten, Conv3D
-from tensorflow.keras.models import Sequential
+from keras import layers
+from keras.layers import Conv2D, InputLayer, UpSampling2D, MaxPooling2D, Dense, Flatten, Conv3D
+from keras.models import Sequential
 
 
 # block 1
 inputs=keras.Input(shape=(None,3))
-x=Flatten()(inputs)
+x=Conv2D(2,2)(inputs)
+x=MaxPooling2D(2,2)(x)
+
+x=Flatten(input_shape=2)(x)
 block_1_output=Dense(256)(x)
 
 
@@ -80,4 +84,4 @@ model.summary()
 model.compile(optimizer='rmsprop',loss='mse')
 
 # there is an issue fitting the data
-model.fit(x=xTrain,y=yTrain, batch_size=1,verbose=1, epochs=100)
+model.fit(x=xTrain,y=yTrain, batch_size=256,verbose=1, epochs=100)
