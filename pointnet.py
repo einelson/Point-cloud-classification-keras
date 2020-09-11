@@ -30,13 +30,68 @@ import os
 import glob
 import trimesh
 import numpy as np
+import pandas as pd
+from sklearn.model_selection import train_test_split
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
 from matplotlib import pyplot as plt
 
+from Mask import Mask
+from laspy.file import File
 tf.random.set_seed(1234)
 
+
+'''
+Open the .las file
+'''
+las_header = None
+max_points=1000000000
+f = File('./data/Room1_filtered.las')
+
+if las_header is None:
+    las_header = f.header.copy()
+if max_points is not None and max_points < f.header.point_records_count:
+    mask = Mask(f.header.point_records_count, False)
+    mask[np.random.choice(f.header.point_records_count, max_points)] = True
+else:
+    mask = Mask(f.header.point_records_count, True)
+    new_df = pd.DataFrame(np.array((f.x, f.y, f.z)).T[mask.bools])
+    new_df.columns = ['x', 'y', 'z']
+if f.header.data_format_id in [2, 3, 5, 7, 8]:
+    rgb = pd.DataFrame(np.array((f.red, f.green, f.blue), dtype='int').T[mask.bools])
+    rgb.columns = ['r', 'g', 'b']
+    new_df = new_df.join(rgb)
+new_df['class'] = f.classification[mask.bools]
+if np.sum(f.user_data):
+    new_df['user_data'] = f.user_data[mask.bools].copy()
+if np.sum(f.intensity):
+    new_df['intensity'] = f.intensity[mask.bools].copy()
+
+
+
+'''
+Preprocess the data
+'''
+# first 3 columns are the x values
+data=new_df
+data=data.drop(['r', 'g', 'b', 'class'], axis=1)
+
+# the last column is the y value
+data_targets=new_df
+data_targets = data_targets.drop(['x', 'y', 'z', 'r', 'g', 'b'], axis=1)
+# print(new_df['class'].unique())
+
+# split the data
+xTrain, xTest, yTrain, yTest = train_test_split(data, data_targets, test_size = 0.1)
+
+
+yTrain = keras.utils.to_categorical(yTrain)
+yTest = keras.utils.to_categorical(yTest)
+
+
+
+'''
 """
 ## Load dataset
 
@@ -111,7 +166,7 @@ def parse_dataset(num_points=2048):
         np.array(train_labels),
         np.array(test_labels),
         class_map,
-    )
+    )'''
 
 
 """
@@ -120,12 +175,12 @@ Set the number of points to sample and batch size and parse the dataset. This ca
 """
 
 NUM_POINTS = 2048
-NUM_CLASSES = 10
+NUM_CLASSES = 8
 BATCH_SIZE = 32
 
-train_points, test_points, train_labels, test_labels, CLASS_MAP = parse_dataset(
-    NUM_POINTS
-)
+# train_points, test_points, train_labels, test_labels, CLASS_MAP = parse_dataset(
+#     NUM_POINTS
+# )
 
 """
 Our data can now be read into a `tf.data.Dataset()` object. We set the shuffle buffer
@@ -143,11 +198,11 @@ def augment(points, label):
     return points, label
 
 
-train_dataset = tf.data.Dataset.from_tensor_slices((train_points, train_labels))
-test_dataset = tf.data.Dataset.from_tensor_slices((test_points, test_labels))
+train_dataset = tf.data.Dataset.from_tensor_slices((xTrain, yTrain))
+test_dataset = tf.data.Dataset.from_tensor_slices((xTest, yTest))
 
-train_dataset = train_dataset.shuffle(len(train_points)).map(augment).batch(BATCH_SIZE)
-test_dataset = test_dataset.shuffle(len(test_points)).batch(BATCH_SIZE)
+train_dataset = train_dataset.shuffle(len(xTrain)).map(augment).batch(BATCH_SIZE)
+test_dataset = test_dataset.shuffle(len(xTest)).batch(BATCH_SIZE)
 
 """
 ### Build a model
@@ -227,7 +282,7 @@ published in the original paper but with half the number of weights at each laye
 are using the smaller 10 class ModelNet dataset.
 """
 
-inputs = keras.Input(shape=(NUM_POINTS, 3))
+inputs = keras.Input(shape=(NUM_POINTS,3))
 
 x = tnet(inputs, 3)
 x = conv_bn(x, 32)
@@ -285,10 +340,10 @@ fig = plt.figure(figsize=(15, 10))
 for i in range(8):
     ax = fig.add_subplot(2, 4, i + 1, projection="3d")
     ax.scatter(points[i, :, 0], points[i, :, 1], points[i, :, 2])
-    ax.set_title(
-        "pred: {:}, label: {:}".format(
-            CLASS_MAP[preds[i].numpy()], CLASS_MAP[labels.numpy()[i]]
-        )
-    )
+    # ax.set_title(
+    #     "pred: {:}, label: {:}".format(
+    #         CLASS_MAP[preds[i].numpy()], CLASS_MAP[labels.numpy()[i]]
+    #     )
+    # )
     ax.set_axis_off()
 plt.show()
