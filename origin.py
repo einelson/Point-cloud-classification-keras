@@ -32,7 +32,6 @@ import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
 from matplotlib import pyplot as plt
-import pandas as pd
 
 tf.random.set_seed(1234)
 
@@ -42,19 +41,19 @@ We use the ModelNet10 model dataset, the smaller 10 class version of the ModelNe
 dataset. First download the data:
 """
 
-# DATA_DIR = tf.keras.utils.get_file(
-#     "modelnet.zip",
-#     "http://3dvision.princeton.edu/projects/2014/3DShapeNets/ModelNet10.zip",
-#     extract=True,
-# )
-# DATA_DIR = os.path.join(os.path.dirname(DATA_DIR), "ModelNet10")
+DATA_DIR = tf.keras.utils.get_file(
+    "modelnet.zip",
+    "http://3dvision.princeton.edu/projects/2014/3DShapeNets/ModelNet10.zip",
+    extract=True,
+)
+DATA_DIR = os.path.join(os.path.dirname(DATA_DIR), "ModelNet10")
 
 """
 We can use the `trimesh` package to read and visualize the `.off` mesh files.
 """
 
-# mesh = trimesh.load(os.path.join(DATA_DIR, "chair/train/chair_0001.off"))
-# mesh.show()
+mesh = trimesh.load(os.path.join(DATA_DIR, "chair/train/chair_0001.off"))
+mesh.show()
 
 """
 To convert a mesh file to a point cloud we first need to sample points on the mesh
@@ -62,41 +61,13 @@ surface. `.sample()` performs a unifrom random sampling. Here we sample at 2048 
 and visualize in `matplotlib`.
 """
 
-# points = mesh.sample(2048)
+points = mesh.sample(2048)
 
-# fig = plt.figure(figsize=(5, 5))
-# ax = fig.add_subplot(111, projection="3d")
-# ax.scatter(points[:, 0], points[:, 1], points[:, 2])
-# ax.set_axis_off()
-# plt.show()
-
-from Mask import Mask
-from laspy.file import File
-'''
-Open the .las file
-'''
-las_header = None
-max_points=1000000000
-f = File('./data/Room1_filtered.las')
-
-if las_header is None:
-    las_header = f.header.copy()
-if max_points is not None and max_points < f.header.point_records_count:
-    mask = Mask(f.header.point_records_count, False)
-    mask[np.random.choice(f.header.point_records_count, max_points)] = True
-else:
-    mask = Mask(f.header.point_records_count, True)
-    new_df = pd.DataFrame(np.array((f.x, f.y, f.z)).T[mask.bools])
-    new_df.columns = ['x', 'y', 'z']
-if f.header.data_format_id in [2, 3, 5, 7, 8]:
-    rgb = pd.DataFrame(np.array((f.red, f.green, f.blue), dtype='int').T[mask.bools])
-    rgb.columns = ['r', 'g', 'b']
-    new_df = new_df.join(rgb)
-new_df['class'] = f.classification[mask.bools]
-if np.sum(f.user_data):
-    new_df['user_data'] = f.user_data[mask.bools].copy()
-if np.sum(f.intensity):
-    new_df['intensity'] = f.intensity[mask.bools].copy()
+fig = plt.figure(figsize=(5, 5))
+ax = fig.add_subplot(111, projection="3d")
+ax.scatter(points[:, 0], points[:, 1], points[:, 2])
+ax.set_axis_off()
+plt.show()
 
 """
 To generate a `tf.data.Dataset()` we need to first parse through the ModelNet data
@@ -113,46 +84,41 @@ def parse_dataset(num_points=2048):
     test_points = []
     test_labels = []
     class_map = {}
-    # folders = glob.glob(os.path.join(DATA_DIR, "[!README]*"))
+    folders = glob.glob(os.path.join(DATA_DIR, "[!README]*"))
 
+    for i, folder in enumerate(folders):
+        print("processing class: {}".format(os.path.basename(folder)))
+        # store folder name with ID so we can retrieve later
+        class_map[i] = folder.split("/")[-1]
+        # gather all files
+        train_files = glob.glob(os.path.join(folder, "train/*"))
+        test_files = glob.glob(os.path.join(folder, "test/*"))
+
+        for f in train_files:
+            train_points.append(trimesh.load(f).sample(num_points))
+            train_labels.append(i)
+
+        for f in test_files:
+            test_points.append(trimesh.load(f).sample(num_points))
+            test_labels.append(i)
+
+    print(np.array(train_points).shape)
+    print(np.array(test_points).shape)
+    print(np.array(train_labels).shape)
+    print(np.array(test_labels).shape)
     '''
-    Preprocess the data
+    (3126, 2048, 3)
+    (636, 2048, 3)
+    (3126,)
+    (636,)
     '''
-    # first 3 columns are the x values
-    data=new_df
-    data=data.drop(['r', 'g', 'b', 'class'], axis=1)
-
-    # the last column is the y value
-    data_targets=new_df
-    data_targets = data_targets.drop(['x', 'y', 'z', 'r', 'g', 'b'], axis=1)
-    # print(new_df['class'].unique())
-
-
-    # I need to split into testing and training
-
-
-    
-
-    for f in train_files:
-        train_points.append(trimesh.load(f).sample(num_points))
-        train_labels.append(i)
-
-    for f in test_files:
-        test_points.append(trimesh.load(f).sample(num_points))
-        test_labels.append(i)
-
-    # print(np.array(train_points).shape)
 
     return (
-        np.array(train_points), # (3126, 2048, 3)
-        np.array(test_points),  # (636, 2048, 3)
-        np.array(train_labels), # (3126,)
-        np.array(test_labels),  # (636,)
+        np.array(train_points),
+        np.array(test_points),
+        np.array(train_labels),
+        np.array(test_labels),
         class_map,
-            
-    
-    
-    
     )
 
 
@@ -185,8 +151,6 @@ def augment(points, label):
     return points, label
 
 
-# print(train_points.shape) (3126, 2048, 3) (data_points, ???, XYZ_value)
-# print(train_labels.shape) (3126,)
 train_dataset = tf.data.Dataset.from_tensor_slices((train_points, train_labels))
 test_dataset = tf.data.Dataset.from_tensor_slices((test_points, test_labels))
 
