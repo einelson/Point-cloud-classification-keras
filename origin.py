@@ -97,15 +97,16 @@ def parse_dataset(num_points=2048):
         for f in train_files:
             train_points.append(trimesh.load(f).sample(num_points))
             train_labels.append(i)
+            print(np.array(train_labels).shape)
 
         for f in test_files:
             test_points.append(trimesh.load(f).sample(num_points))
             test_labels.append(i)
 
-    print(np.array(train_points).shape)
-    print(np.array(test_points).shape)
-    print(np.array(train_labels).shape)
-    print(np.array(test_labels).shape)
+    # print(np.array(train_points).shape)
+    # print(np.array(test_points).shape)
+    print(np.array(train_labels))
+    # print(np.array(test_labels).shape)
     '''
     (3126, 2048, 3)
     (636, 2048, 3)
@@ -150,7 +151,7 @@ def augment(points, label):
     points = tf.random.shuffle(points)
     return points, label
 
-
+print(train_labels.shape)
 train_dataset = tf.data.Dataset.from_tensor_slices((train_points, train_labels))
 test_dataset = tf.data.Dataset.from_tensor_slices((test_points, test_labels))
 

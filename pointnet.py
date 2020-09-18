@@ -1,16 +1,12 @@
 """
-Title: Point cloud classification with PointNet
+Title: Point cloud classification with PointNet for warehouse
 Author: [David Griffiths](https://dgriffiths3.github.io)
+Modified by: Ethan Nelson
 Date created: 2020/05/25
 Last modified: 2020/05/26
-Description: Implementation of PointNet for ModelNet10 classification.
-"""
-"""
-# Point cloud classification
-"""
+Description: Implementation of PointNet for warehouse classification.
 
-"""
-## Introduction
+Introduction:
 Classification, detection and segmentation of unordered 3D point sets i.e. point clouds
 is a core problem in computer vision. This example implements the seminal point cloud
 deep learning paper [PointNet (Qi et al., 2017)](https://arxiv.org/abs/1612.00593). For a
@@ -20,7 +16,6 @@ post](https://medium.com/@luis_gonzales/an-in-depth-look-at-pointnet-111d7efdaa1
 
 """
 ## Setup
-If using colab first install trimesh with `!pip install trimesh`.
 """
 
 
@@ -34,69 +29,75 @@ from tensorflow.keras import layers
 from matplotlib import pyplot as plt
 import pandas as pd
 
+from Mask import Mask
+from laspy.file import File
+
 tf.random.set_seed(1234)
 
 """
-## Load dataset
-We use the ModelNet10 model dataset, the smaller 10 class version of the ModelNet40
-dataset. First download the data:
+To open las files and returnteh test and training points
 """
+def open_las(file='none'):
+    if file =='none':
+        print('No files selected')
+        return
 
-# DATA_DIR = tf.keras.utils.get_file(
-#     "modelnet.zip",
-#     "http://3dvision.princeton.edu/projects/2014/3DShapeNets/ModelNet10.zip",
-#     extract=True,
-# )
-# DATA_DIR = os.path.join(os.path.dirname(DATA_DIR), "ModelNet10")
 
-"""
-We can use the `trimesh` package to read and visualize the `.off` mesh files.
-"""
+    las_header = None
+    max_points=1000000000
+    f = File(file)
 
-# mesh = trimesh.load(os.path.join(DATA_DIR, "chair/train/chair_0001.off"))
-# mesh.show()
+    if las_header is None:
+        las_header = f.header.copy()
+    if max_points is not None and max_points < f.header.point_records_count:
+        mask = Mask(f.header.point_records_count, False)
+        mask[np.random.choice(f.header.point_records_count, max_points)] = True
+    else:
+        mask = Mask(f.header.point_records_count, True)
+        new_df = pd.DataFrame(np.array((f.x, f.y, f.z)).T[mask.bools])
+        new_df.columns = ['x', 'y', 'z']
+    if f.header.data_format_id in [2, 3, 5, 7, 8]:
+        rgb = pd.DataFrame(np.array((f.red, f.green, f.blue), dtype='int').T[mask.bools])
+        rgb.columns = ['r', 'g', 'b']
+        new_df = new_df.join(rgb)
+    new_df['class'] = f.classification[mask.bools]
+    if np.sum(f.user_data):
+        new_df['user_data'] = f.user_data[mask.bools].copy()
+    if np.sum(f.intensity):
+        new_df['intensity'] = f.intensity[mask.bools].copy()
+    
+    return new_df
 
-"""
-To convert a mesh file to a point cloud we first need to sample points on the mesh
-surface. `.sample()` performs a unifrom random sampling. Here we sample at 2048 locations
-and visualize in `matplotlib`.
-"""
 
-# points = mesh.sample(2048)
-
-# fig = plt.figure(figsize=(5, 5))
-# ax = fig.add_subplot(111, projection="3d")
-# ax.scatter(points[:, 0], points[:, 1], points[:, 2])
-# ax.set_axis_off()
-# plt.show()
-
-from Mask import Mask
-from laspy.file import File
 '''
-Open the .las file
+Preprocess the las data and reshape
 '''
-las_header = None
-max_points=1000000000
-f = File('./data/Room1_filtered.las')
+def preprocess_las(data):
+    data_targets=data
 
-if las_header is None:
-    las_header = f.header.copy()
-if max_points is not None and max_points < f.header.point_records_count:
-    mask = Mask(f.header.point_records_count, False)
-    mask[np.random.choice(f.header.point_records_count, max_points)] = True
-else:
-    mask = Mask(f.header.point_records_count, True)
-    new_df = pd.DataFrame(np.array((f.x, f.y, f.z)).T[mask.bools])
-    new_df.columns = ['x', 'y', 'z']
-if f.header.data_format_id in [2, 3, 5, 7, 8]:
-    rgb = pd.DataFrame(np.array((f.red, f.green, f.blue), dtype='int').T[mask.bools])
-    rgb.columns = ['r', 'g', 'b']
-    new_df = new_df.join(rgb)
-new_df['class'] = f.classification[mask.bools]
-if np.sum(f.user_data):
-    new_df['user_data'] = f.user_data[mask.bools].copy()
-if np.sum(f.intensity):
-    new_df['intensity'] = f.intensity[mask.bools].copy()
+    # first 3 columns are the x values
+    data=data.drop(['r', 'g', 'b', 'class'], axis=1)
+
+    # the last column is the y value
+    data_targets = data_targets.drop(['x', 'y', 'z', 'r', 'g', 'b'], axis=1)
+    # print(new_df['class'].unique())
+
+
+    # Reshape data to correct format
+    # print(data.shape) -> (17848546, 3)
+    
+    data=np.array(data)
+    data=np.expand_dims(data, axis=0)  # shape -> (1, 17848546, 3)
+    
+
+
+    # print(data_targets.shape) -> (17848546, 1)
+    labels = (np.array(data_targets).flatten()) # shape -> (17848546,)
+    # print(labels)    
+
+
+    return data, labels
+
 
 """
 To generate a `tf.data.Dataset()` we need to first parse through the ModelNet data
@@ -107,52 +108,28 @@ enumerate index value as the object label and use a dictionary to recall this la
 
 
 def parse_dataset(num_points=2048):
-
     train_points = []
     train_labels = []
     test_points = []
     test_labels = []
     class_map = {}
-    # folders = glob.glob(os.path.join(DATA_DIR, "[!README]*"))
-
-    '''
-    Preprocess the data
-    '''
-    # first 3 columns are the x values
-    data=new_df
-    data=data.drop(['r', 'g', 'b', 'class'], axis=1)
-
-    # the last column is the y value
-    data_targets=new_df
-    data_targets = data_targets.drop(['x', 'y', 'z', 'r', 'g', 'b'], axis=1)
-    # print(new_df['class'].unique())
 
 
-    # I need to split into testing and training
+    # open files - will need to loop through all data
+    train_df=open_las('./data/Room1_filtered.las')
+    test_df=open_las('./data/Room1_filtered.las')
 
+    # prepreocess
+    train_points, train_labels = preprocess_las(train_df)
+    test_points, test_labels = preprocess_las(test_df)
 
-    
-
-    for f in train_files:
-        train_points.append(trimesh.load(f).sample(num_points))
-        train_labels.append(i)
-
-    for f in test_files:
-        test_points.append(trimesh.load(f).sample(num_points))
-        test_labels.append(i)
-
-    # print(np.array(train_points).shape)
 
     return (
-        np.array(train_points), # (3126, 2048, 3)
+        np.array(train_points), # (3126, 2048, 3) (number of files(usually each file contains 1 class), points from each file (batch size, not the whole file size), XYZ coordinates)
         np.array(test_points),  # (636, 2048, 3)
-        np.array(train_labels), # (3126,)
+        np.array(train_labels), # (3126,) (number of files loaded where each file is a class)
         np.array(test_labels),  # (636,)
         class_map,
-            
-    
-    
-    
     )
 
 
@@ -161,7 +138,8 @@ Set the number of points to sample and batch size and parse the dataset. This ca
 ~5minutes to complete.
 """
 
-NUM_POINTS = 2048
+# NUM_POINTS = 2048
+NUM_POINTS = 65,536
 NUM_CLASSES = 10
 BATCH_SIZE = 32
 
@@ -185,8 +163,8 @@ def augment(points, label):
     return points, label
 
 
-# print(train_points.shape) (3126, 2048, 3) (data_points, ???, XYZ_value)
-# print(train_labels.shape) (3126,)
+# print(train_points.shape) #(3126, 2048, 3) (number of files loaded, batch size, XYZ_value)
+# print(train_labels.shape) #(3126,) (number of files loaded where each file is a class)
 train_dataset = tf.data.Dataset.from_tensor_slices((train_points, train_labels))
 test_dataset = tf.data.Dataset.from_tensor_slices((test_points, test_labels))
 
