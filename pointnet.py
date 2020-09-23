@@ -3,7 +3,7 @@ Title: Point cloud classification with PointNet for warehouse
 Author: [David Griffiths](https://dgriffiths3.github.io)
 Modified by: Ethan Nelson
 Date created: 2020/05/25
-Last modified: 2020/05/26
+Last modified: 09/23/2020
 Description: Implementation of PointNet for warehouse classification.
 
 Introduction:
