@@ -97,7 +97,7 @@ def parse_dataset(num_points=2048):
         for f in train_files:
             train_points.append(trimesh.load(f).sample(num_points))
             train_labels.append(i)
-            print(np.array(train_labels).shape)
+
 
         for f in test_files:
             test_points.append(trimesh.load(f).sample(num_points))

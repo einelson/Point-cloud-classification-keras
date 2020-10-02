@@ -72,31 +72,16 @@ def open_las(file='none'):
 '''
 Preprocess the las data and reshape
 '''
-def preprocess_las(data):
+def preprocess_las(data, sample_points=2048):
     data_targets=data
 
-    # first 3 columns are the x values
+    # first 3 columns are the x values, get rid of everything else
     data=data.drop(['r', 'g', 'b', 'class'], axis=1)
-
-    # the last column is the y value
-    data_targets = data_targets.drop(['x', 'y', 'z', 'r', 'g', 'b'], axis=1)
-    # print(new_df['class'].unique())
-
-
-    # Reshape data to correct format
-    # print(data.shape) -> (17848546, 3)
     
     data=np.array(data)
-    data=np.expand_dims(data, axis=0)  # shape -> (1, 17848546, 3)
-    
 
-
-    # print(data_targets.shape) -> (17848546, 1)
-    labels = (np.array(data_targets).flatten()) # shape -> (17848546,)
-    # print(labels)    
-
-
-    return data, labels
+    data=data[:sample_points, :]
+    return data#, labels
 
 
 """
@@ -107,21 +92,33 @@ enumerate index value as the object label and use a dictionary to recall this la
 """
 
 
-def parse_dataset(num_points=2048):
+def parse_dataset(NUM_POINTS=2048):
     train_points = []
     train_labels = []
     test_points = []
     test_labels = []
     class_map = {}
 
+    import glob
+    folders=glob.glob('./data/*')
+    
+    # iterate through the classes
+    for i, folder in enumerate(folders):
+        # class_map[i] = folder.split("/")[-1]
 
-    # open files - will need to loop through all data
-    train_df=open_las('./data/Room1_filtered.las')
-    test_df=open_las('./data/Room1_filtered.las')
+        print("processing class: {}".format(os.path.basename(folder)))
 
-    # prepreocess
-    train_points, train_labels = preprocess_las(train_df)
-    test_points, test_labels = preprocess_las(test_df)
+        train_files = glob.glob(os.path.join(folder, "train/*"))
+        test_files = glob.glob(os.path.join(folder, "test/*"))
+
+        for f in train_files:
+            train_points.append(preprocess_las(open_las(f), NUM_POINTS))
+            train_labels.append(i)
+
+
+        for f in test_files:
+            test_points.append(preprocess_las(open_las(f), NUM_POINTS))
+            test_labels.append(i)
 
 
     return (
@@ -139,7 +136,7 @@ Set the number of points to sample and batch size and parse the dataset. This ca
 """
 
 # NUM_POINTS = 2048
-NUM_POINTS = 65,536
+NUM_POINTS = 30000
 NUM_CLASSES = 10
 BATCH_SIZE = 32
 
@@ -163,8 +160,6 @@ def augment(points, label):
     return points, label
 
 
-# print(train_points.shape) #(3126, 2048, 3) (number of files loaded, batch size, XYZ_value)
-# print(train_labels.shape) #(3126,) (number of files loaded where each file is a class)
 train_dataset = tf.data.Dataset.from_tensor_slices((train_points, train_labels))
 test_dataset = tf.data.Dataset.from_tensor_slices((test_points, test_labels))
 
@@ -280,34 +275,8 @@ model.compile(
     metrics=["sparse_categorical_accuracy"],
 )
 
-model.fit(train_dataset, epochs=20, validation_data=test_dataset)
+model.fit(train_dataset, epochs=10, validation_data=test_dataset)
 
-"""
-## Visualize predictions
-We can use matplotlib to visualize our trained model performance.
-"""
+score, acc = model.evaluate(x=train_points, y=train_labels)
 
-data = test_dataset.take(1)
-
-points, labels = list(data)[0]
-points = points[:8, ...]
-labels = labels[:8, ...]
-
-# run test data through model
-preds = model.predict(points)
-preds = tf.math.argmax(preds, -1)
-
-points = points.numpy()
-
-# plot points with predicted class and label
-fig = plt.figure(figsize=(15, 10))
-for i in range(8):
-    ax = fig.add_subplot(2, 4, i + 1, projection="3d")
-    ax.scatter(points[i, :, 0], points[i, :, 1], points[i, :, 2])
-    ax.set_title(
-        "pred: {:}, label: {:}".format(
-            CLASS_MAP[preds[i].numpy()], CLASS_MAP[labels.numpy()[i]]
-        )
-    )
-    ax.set_axis_off()
-plt.show()
+print('Accuracy: ', acc*100)
