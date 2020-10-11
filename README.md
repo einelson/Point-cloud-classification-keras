@@ -1,2 +1,2 @@
 # Point-cloud-classification-keras
-SPG for semantic segmentation
+Point Net++ for semantic segmentation on .las files
