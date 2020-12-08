@@ -12,6 +12,8 @@ is a core problem in computer vision. This example implements the seminal point 
 deep learning paper [PointNet (Qi et al., 2017)](https://arxiv.org/abs/1612.00593). For a
 detailed intoduction on PointNet see [this blog
 post](https://medium.com/@luis_gonzales/an-in-depth-look-at-pointnet-111d7efdaa1a).
+
+This code is modified from https://github.com/keras-team/keras-io/blob/master/examples/vision/pointnet.py
 """
 
 """
